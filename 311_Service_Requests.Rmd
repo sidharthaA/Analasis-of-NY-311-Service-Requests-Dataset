@@ -1,0 +1,851 @@
+---
+title: "homework vi"
+output: 
+   pdf_document:
+     toc: true
+     latex_engine: lualatex
+author: 'Sidhartha Amperayani, Moinuddin Memon, Amritha Menon'
+date: \today
+editor_options: 
+  markdown: 
+    wrap: sentence
+header-includes:
+  \usepackage{booktabs}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# **INTRODUCTION**
+
+Data helps a person make informed decisions.
+Data analysis is a crucial and effective step in decision-making and predicting trends and behavior.
+Visual Analytics makes studying data a lot simpler and more accurate.
+Visual Analytics fascilitates enterprises / individuals understand the market better to improve their system in a a targeted fasion.
+With the use of visualizations, non-tehnical stakeholders can understand the results better.
+
+The exploratory data analysis of the NYC 311 Service Request dataset helps in analyzing the performance of different agencies in NYC when it comes to handling non-emergent requests.
+Through this, we can seek answers to various questions as to how the complaints are distributed, which complaint is most prevalent, which Borough makes most complaints and a lot more.
+These answers will help us in identifying different correlations between different aspects of the data.
+NYPD Complaints dataset from 2010 to 2015 is also used along with the 311 dataset to take a deeper dive to examine how NYPD handles its complaints.
+Through merging this data one can understand better how about the trends in crime over several boroughs.
+NYPD is a department that helps the city maintain law and order.
+Through this project we try to understand what crimes are being commited in the city and how well are they being handled.
+While working on this project, we understood the functionality of seeral agencies their day to day service request natures.
+
+Two datasets are being used here.
+The NYC 311 Service Request dataset consists of service requests made from the years 2010 to 2019.
+However, we use service requests between the years 2010 and 2015 for data analysis.
+Services provided by NYPD, DOT, DPR, DCA, HRA and several other agencies in all the 5 Boroughs of the city, Bronx, Brooklyn, Manhattan, Queens and Statten Islands.
+The dataset contains 41 columns which has attributes like date of complaint creation and resolution, type of complaint, agency handling the complaint, address, and status of the case.
+Only the relevant attributes among 41 were selected for analysis.
+
+This dataset was obtained from <https://nycopendata.socrata.com/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9.>
+
+To help us better understand the the way a NYPD works, we import the NYPD complaints data-set which represents all the crime reported to NYPD.
+Through this dataset, we cn find the nature of crimes and when they were commited in the city.
+We can also learn how fast the complaints are resolved in different boroughs of the city.
+We sampled this from NYC Open Data, which can be found here: <https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i>
+
+The dataset's attributes describes details related to the type of crime (valid felony, misdemeanor, and violation crimes) that has been reported to the New York City Police Department from 2006 to 2019.
+Since the 311 Service Request data contains data between the years 2010 and 2015, we have filtered crimes reported between the years 2010 and 2015 from NYPD Complaints dataset.
+This dataset includes date, location of the crime, victims ad suspects age group and other relevant features pertaining to the crime.
+Combining these datasets helped us analyse the complaints better.
+
+## **PARAMETERS**
+
+All the parameters required for this file are initialized here like if the file name, sample number of rows, if a full run or test run must be made and also the key for the Google map API.
+
+```{r Parameters, warning=FALSE, include=FALSE}
+# All important parameters
+mainFile <- '311_Service_Requests_from_2010_to_Present.csv'
+additionalFile <- 'NYPD_Complaint_Data_Historic.csv'
+sampleRows <- 80000
+testRun <- FALSE
+key <- Sys.getenv("key")
+```
+
+# **INITIALIZATION**
+
+The packages to be used like tidyverse, ggplot, dplyr etc. are installed.
+The program runs according to the user's setting of ***testRun*** variable.
+All the irrelevant columns are removed and the duplicate rows are also removed.
+In the ***Borough*** column the ***Unspecified*** value is changed to the respective borough name based on the given zip codes and our knowledge of NYC.
+The date values are formatted from date type to integers for easy usage.
+
+```{r Initialization, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+packages <-
+c(
+"tidyverse",
+'xtable',
+"data.table",
+"ggmap",
+"dplyr",
+'ggplot2',
+'tidyr',
+'plyr',
+'lubridate',
+"xtable",
+"stopwords",
+'tidytext',
+'lubridate'
+)
+for (package in packages) {
+library(package, character.only = TRUE)
+}
+
+if (testRun){
+  print(paste0('Reducing dataset size to ',sampleRows))
+  df <- fread(mainFile, nrows=sampleRows)
+} else {
+  df <- fread(mainFile)
+}
+# remvoing space from column names
+names(df) <-names(df) %>% 
+  stringr::str_replace_all("\\s", "")
+df <- subset(df, select = -c(UniqueKey,City,LocationType,IncidentAddress,
+                             CrossStreet1,CrossStreet2, IntersectionStreet1,
+                             IntersectionStreet2, Landmark, FacilityType, DueDate, 
+                             SchoolNotFound,SchoolorCitywideComplaint, 
+                             ResolutionActionUpdatedDate, CommunityBoard, VehicleType, 
+                             ParkFacilityName, TaxiCompanyBorough, TaxiPickUpLocation, 
+                             BridgeHighwayName, BridgeHighwayDirection,  RoadRamp, 
+                             BridgeHighwaySegment,GarageLotName,FerryDirection
+                             ,FerryTerminalName,SchoolNumber,SchoolPhoneNumber,Location
+                             ,SchoolName,SchoolRegion,SchoolCode,SchoolAddress,SchoolCity
+                             ,SchoolState, ParkBorough, SchoolZip))
+nyc_with_dups<-nrow(df)
+df <- df %>% 
+  distinct()
+# removing duplicate rows
+nyc_without_dups<-nrow(df)
+nyc_with_dups-nyc_without_dups
+# Grouping Borough using zip codes
+df$IncidentZip <- as.integer(df$IncidentZip)
+df$Borough[df$IncidentZip>=10001 & df$IncidentZip<10283]<-"MANHATTAN"
+df$Borough[df$IncidentZip>=10301 & df$IncidentZip<10315]<-"STATEN ISLAND"
+df$Borough[df$IncidentZip>=10451 & df$IncidentZip<10476]<-"BRONX"
+df$Borough[df$IncidentZip>=11004 & df$IncidentZip<11110]<-"QUEENS"
+df$Borough[df$IncidentZip>=11351 & df$IncidentZip<11698]<-"QUEENS"
+df$Borough[df$IncidentZip>=11201 & df$IncidentZip<11257]<-"BROOKLYN"
+
+library(kableExtra)
+landscape(knitr::kable(head(df),"latex"))%>% 
+  kable_styling(latex_options="scale_down", "HOLD_position")
+```
+
+```{r Date Time Parsing, echo=FALSE}
+# Parsing the date columns and splitting them
+date<-parse_datetime(df$CreatedDate,format="%m/%d/%Y %H:%M:%S %p")
+df[,"Created_year"]<-format(date,"%y")
+df[,"Created_month"]<-(format(date,"%m"))
+df[,"Created_day"]<-as.integer(format(date,"%d"))
+df[,"Created_hour"]<-as.integer(format(date,"%H"))
+df[,"Created_minute"]<-as.integer(format(date,"%M"))
+df$HM<-paste(df$Created_hour,df$Created_minute)
+date<-parse_datetime(df$ClosedDate,format="%m/%d/%Y %H:%M:%S %p")
+df[,"Closed_month"]<-(format(date,"%m"))
+df[,"Closed_day"]<-as.integer(format(date,"%d"))
+df[,"Closed_hour"]<-as.integer(format(date,"%H"))
+```
+
+# FINDINGS
+
+## 311 DATASET
+
+## TOP **5 COMPLAINTS ACROSS NYC**
+
+```{r Top 5 Complaint types, echo=FALSE, message=FALSE, warning=FALSE}
+maps_df <- fread(mainFile, nrows=sampleRows)
+names(maps_df) <-names(maps_df) %>% stringr::str_replace_all("\\s", "")
+# getting a subset of the original dataset
+maps_df.sub <- subset(maps_df, ComplaintType %in% dplyr::count(maps_df, ComplaintType, sort=T)[0:5]$ComplaintType)
+maps_df.sub <- maps_df.sub %>% select(ComplaintType, Latitude, Longitude) %>% drop_na()
+# getting the frequency of each complaint
+counts <- ddply(maps_df.sub, .(ComplaintType), "count")
+counts <- filter(counts, freq > 2)
+counts$freq <- as.numeric(counts$freq)
+counts$Longitude <- as.numeric(counts$Longitude)
+counts$Latitude <- as.numeric(counts$Latitude)
+# google map api
+ggmap::register_google(key = key)
+# map of NYC
+nyc_map <- get_map(location = c(lon= -74.00, lat = 40.71), maptype = "terrain", zoom = 13)
+ggmap(nyc_map)+ geom_point(data = counts, aes(x=Longitude,y=Latitude, shape=factor(ComplaintType)), size=0.6)+  xlab('Longitude') + ylab('Latitude')+ facet_wrap(~ComplaintType)+
+ggtitle('Top 5 Complaint Distribution across NYC') + theme(axis.text.y = element_blank(),axis.text.x = element_blank())
+
+
+
+```
+
+We can see that the top 5 complaints are Heat/Hot water, Water System, Blocked Driveway, Street Condition, and Street Light Conditions are the top 5 complaints in that order, based on their density distribution across the NYC map.
+
+## **TOP 5 AGENCIES (BASED ON CLOSED CASES)**
+
+```{r top 5 agencies by closed, echo=FALSE, message=FALSE}
+# selecting only closed cases
+resolved_cases=df[df$ClosedDate!="",]
+ggplot(subset(resolved_cases, Agency %in% 
+                dplyr::count(df, Agency, sort = T)[0:5,]$Agency))+
+  aes(x=fct_infreq(Agency))+
+  geom_histogram(stat ="count", fill="turquoise")+
+  labs(x="Agency", y="No. of complaints")+
+  coord_flip()+
+  labs(title = "Top 5 Agencies in terms of Closed Cases")
+
+```
+
+The HPD department, (Department of Housing, Preservation and Development) is the Agency which has closed the most cases, followed by DOT (Department of Transportation).
+
+## NYPD COMPLAINTS IN EACH BOROUGH
+
+```{r NYPD compliants in each borough, echo=FALSE}
+library(scales)
+# picking NYPD cases
+nypd_cases=df[df$Agency=="NYPD",]
+# filtering out Unspecified from each Borough
+nypd_cases.sub <- nypd_cases %>%
+  filter(Borough %in% c('BRONX', 'QUEENS','STATEN ISLAND', 'BROOKLYN','MANHATTAN'))
+ggplot(nypd_cases.sub, aes(fct_infreq(Borough)))+geom_bar(stat ="count", fill="violetred4")+
+coord_polar(theta = 'x') + ggtitle('NYPD Complaints in each Borough')+scale_y_continuous(labels=comma)+labs(x="Borough", y="No. of complaints to NYPD")
+
+
+```
+
+The Borough - Brooklyn has a lot of cases to which NYPD needs to respond.
+
+## NOISE COMPLAINT DISTRIBUTION IN EACH BOROUGH
+
+```{r noise, echo=FALSE, message=FALSE, warning=FALSE}
+
+# filtering out the different noise complaints
+dataset <- df %>% filter(ComplaintType %in% c("Noise", "Noise - Commercial", "Noise - Helicopter", "Noise - Park", "Noise - Residential", "Noise - Street/Sidewalk", "Noise - Vehicle", "Noise - House of Worship"))
+
+nyc_map <- get_map(location = c(lon= -74.0, lat = 40.71), maptype = "terrain", zoom = 12) 
+ggmap(nyc_map) + stat_density2d(
+    aes(x = Longitude, y = Latitude, fill = ..level.., alpha = 0.1),
+    size = 0.01, bins = 10, data = dataset,
+    geom = "polygon"
+  ) + scale_fill_gradient(low = "green", high = "red") + 
+  ggtitle("Distribution of Noise Complaints") +
+  guides(alpha="none")
+
+```
+
+From the different types of noise complaints, we can see that helicopter noise, noise from house of worship, parks, streets and vehicles are on the lower side.
+But commercial noise and other noise complaints seem to be higher, especially in Manhattan.
+Staten Island and Bronx seem to have less number of noise complaints.
+
+## TOTAL NUMBER OF COMPLAINTS, MONTH WISE
+
+```{r total comps by month, echo=FALSE}
+# creating a sub dataset and grouping it by months
+date_request<-
+  subset(df,select=c(CreatedDate,ComplaintType,Borough)) %>%
+  mutate(Month=month(mdy_hms(CreatedDate))) %>%
+  group_by(Month) %>%
+  dplyr::summarize(Complaints=n())
+date_request$Month<- as.factor(month.abb[date_request$Month])
+date_request$Month <- factor(date_request$Month, levels = date_request$Month)
+# plotting complaints month wise
+ggplot(date_request, aes(x=Month, y= Complaints) ) + 
+    xlab("Month") +
+    geom_line(aes(group=1),color='deepskyblue') +
+    geom_point(color='deeppink')+
+    labs(title="Total Complaints By Month")+
+    theme(plot.title = element_text(hjust = 0.4))+
+    scale_y_continuous(labels = comma,expand = expansion(mult = c(0, 0)),limits = c(0, 900000))
+
+```
+
+From the line graph, it is seen that the total complaints are higher during the month of January.
+
+## PENDING CASES IN EACH AGENCY
+
+```{r pending cases, echo=FALSE}
+pend <- select(df, Agency, Status)
+# filtering out pending cases
+pend <- filter(pend, Status=="Pending")
+# grouping by top 5 agencies
+pending <-pend %>% group_by(Agency) %>% dplyr::summarize(count=n()) 
+pending$Agency <- factor(pending$Agency,
+                       levels=pending$Agency[order(pending$count,
+                                                 decreasing=FALSE)])
+(ggplot(pending, aes(x=Agency, y=count))+
+    geom_bar(stat="identity", color ='yellowgreen',fill="seashell")+ coord_flip()+
+    ggtitle(label="Top Total pending cases by agency")+
+    ylab("Number of pending cases"))
+```
+
+The agency with the most pending cases is DOT ( Department of Transportation).
+
+## AVERAGE RESOLUTION TIME, AGENCY WISE
+
+```{r res time, echo=FALSE}
+# calculating the resolution time in hours
+resolution_hrs<- mdy_hms(df$ClosedDate)-mdy_hms(df$CreatedDate)
+resolution_hrs<- round(as.numeric(resolution_hrs,units="hours"),2)
+df$ResolutionTimeHrs<-resolution_hrs
+# creating a subset to get avg resolution time
+new_df <- df[df$ResolutionTimeHrs>0.0,] %>% subset(select=c(Agency, ResolutionTimeHrs))
+new_df <- new_df %>% filter(!is.na(ResolutionTimeHrs))
+new_df2 <- new_df %>% group_by(Agency) %>%
+  dplyr::summarize(avgresptime = mean(ResolutionTimeHrs))
+ggplot(new_df2, aes(x=reorder(Agency,-avgresptime), y=avgresptime)) + geom_bar(stat='identity', fill='darkblue')+ggtitle(label="Average resolution time in hours Agency wise")+
+    ylab('Avg resolution time(hrs)')+xlab('Agency') + coord_flip()
+```
+
+From the average resolution time (in hours) calculated for each agency, it is seen that the Agency DCA (Department of Consumer Affairs) has the highest resolution time.
+
+## COMPLAINTS BY THE HOUR
+
+```{r Complaints by the Hour, echo=FALSE}
+# removing default time complaints 
+complaintHour <- df[df$HM!="0 0"] %>%
+  group_by(Created_hour) %>%
+  dplyr::summarize(Complaints=n())
+complaintHour$Created_hour<- as.factor(complaintHour$Created_hour)
+complaintHour$Created_hour <- factor(complaintHour$Created_hour, levels = complaintHour$Created_hour)
+# plotting complaints based on each hour
+ggplot(complaintHour, aes(x=Created_hour, y= Complaints) ) + 
+    xlab("Hour") +
+    geom_line(aes(group=1),color='deepskyblue') +
+    geom_point(color='deeppink')+
+    labs(title="Total Complaints By Hour")+
+    theme(plot.title = element_text(hjust = 0.4))+
+    scale_y_continuous(labels = comma,expand = expansion(mult = c(0, 0)),limits = c(0, 500000))
+```
+
+We can find in the pattern of the number of complaints reported against the hours in a day that the peak time of the reporting is between 9-12.
+We also removed the auto-generated complaint times which were set to 0 hour by default by checking against the minute value, If it was also 0 then it was by default and can be removed.
+
+## TOP COMPLAINT WORDS
+
+```{r Top Complaint Words, echo=FALSE, message=FALSE, warning=FALSE}
+# collecting stop words
+data(stop_words)
+# Removing NA values and unspecifed borough values
+tokenized_desc <- df %>%
+  select(ComplaintType, Descriptor,Borough) %>%
+  filter(!str_detect(Borough,"Unspecified")) %>% 
+  filter(!str_detect(Descriptor,"NA")) %>% 
+  unnest_tokens(word, Descriptor) %>%
+  anti_join(stop_words) %>% 
+  group_by(Borough, word) %>%
+  tally()
+# Tokenizing the descriptor field
+tokenized_desc %>%
+  group_by(Borough) %>%
+  top_n(8) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = reorder(word,-n), y = n, fill = factor(Borough))) +
+  geom_bar(stat = "identity") +
+  theme(legend.position = "none") +
+  facet_wrap(~Borough, scales = "free",dir="v") + 
+  coord_flip() +
+  labs(x = "Words Used in Descriptor Fields",
+       y = "Frequency Of Each Word",
+       title = "Top words used in Descriptor Field by Borough")+
+  scale_y_continuous(labels = comma)
+```
+
+We follow the word counts in the descriptor field of the data-set to get insights about how the complaints are reported.
+As we can see, "heat" is a keyword found the most in the descriptor field across the Boroughs Bronx, Brooklyn,Manhattan while "street" is found most in Staten Islands and Queens complaints.
+These insights give an idea about the context in which the complaints are reported and are very insightful.
+
+## NYPD COMPLAINT DATASET
+
+```{r NYPD Complaint Dataset, echo=FALSE, message=FALSE, warning=FALSE}
+# Reading the additional file
+alt_data<-fread(additionalFile)
+# Removing irrelevant columns
+alt_data <- subset(alt_data, select = -c(CMPLNT_NUM,CMPLNT_TO_DT,CMPLNT_TO_TM,RPT_DT,
+                                       KY_CD,PD_CD,CRM_ATPT_CPTD_CD,JURIS_DESC   ,JURISDICTION_CODE,TRANSIT_DISTRICT,PATROL_BORO,STATION_NAME,HOUSING_PSA,
+                                       ADDR_PCT_CD,LOC_OF_OCCUR_DESC,PREM_TYP_DESC,
+                                       PARKS_NM,HADEVELOPT,X_COORD_CD,Y_COORD_CD,Lat_Lon))
+alt_data<-alt_data %>% distinct() 
+# Parsing date column and spliting it
+alt_data$CMPLNT_FR_DT<-parse_date_time(alt_data$CMPLNT_FR_DT, "%m/%d/%y")
+alt_data <- mutate(alt_data,
+  DAY = as.integer(format(alt_data$CMPLNT_FR_DT, format="%d")),
+  MONTH = as.integer(format(alt_data$CMPLNT_FR_DT, format="%m")),
+  YEAR = as.integer(format(alt_data$CMPLNT_FR_DT, format="%y")),
+)
+# Only keeping years from 2010 to 2015 to match the main data
+alt_data <- alt_data[alt_data$YEAR <= 15 & alt_data$YEAR >= 10]
+
+
+
+```
+
+## NYPD CRIMINAL COMPLAINT DATA SET
+
+```{r head altdata, echo=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+landscape(knitr::kable(head(alt_data),"latex"))%>% 
+  kable_styling(latex_options="scale_down")%>% 
+  kable_styling(latex_options="HOLD_position")
+
+```
+
+## NYPD CRIMES COMPLAINT BY MONTH
+
+```{r nypd comps by month, echo=FALSE, warning=FALSE}
+# creating a sub dataset and grouping it by months
+date_request<-
+  subset(alt_data,select=c(MONTH,LAW_CAT_CD,BORO_NM)) %>%
+  group_by(MONTH) %>%
+  dplyr::summarize(Complaints=n())
+date_request$MONTH<- as.factor(month.abb[date_request$MONTH])
+date_request$MONTH <- factor(date_request$MONTH, levels = date_request$MONTH)
+# plotting crime count by month
+ggplot(date_request, aes(x=MONTH, y= Complaints) ) + 
+    xlab("Month") + ylab('Crimes')+
+    geom_line(aes(group=1),color='blue') +
+    geom_point(color='red')+
+    labs(title="Total NYPD Complaints By Month")+
+    theme(plot.title = element_text(hjust = 0.4))+
+    scale_y_continuous(labels = comma,expand = expansion(mult = c(0, 0)),limits = c(0, 300000))
+
+```
+
+The graph tells us that the colder months in NYC (November, December, January, and February) the criminal complaints dip down but otherwise the crime rate remains high at a peak in NYC.
+
+## NYPD COMPLAINTS BY HOUR
+
+```{r NYPD Complaints by the Hour, echo=FALSE, message=FALSE, warning=FALSE}
+# parsing the time column
+nypd_date<-parse_time(alt_data$CMPLNT_FR_TM,format="%H:%M:%S")
+alt_data[,"Hour"]<-as.integer(format(hour(nypd_date)))
+alt_data[,"Minute"]<-as.integer(format(minute(nypd_date)))
+alt_data$HM<-paste(alt_data$Hour,alt_data$Minute)
+# removing 0th hour
+complaintHour <- alt_data[alt_data$HM!="0 0"] %>%
+  group_by(Hour) %>%
+  dplyr::summarize(Complaints=n()) %>% 
+  drop_na()
+complaintHour$Hour<- as.factor(complaintHour$Hour)
+complaintHour$Hour <- factor(complaintHour$Hour, levels = complaintHour$Hour)
+# plotting complaints by hour
+ggplot(complaintHour, aes(x=Hour, y= Complaints) ) + 
+    xlab("Hour") + ylab('Crimes')+
+    geom_line(aes(group=1),color='purple') +
+    geom_point(color='black')+
+    labs(title="Total Complaints By Hour")+
+    theme(plot.title = element_text(hjust = 0.4))+
+    scale_y_continuous(labels = comma,expand = expansion(mult = c(0, 0)),limits = c(0, 200000))
+
+```
+
+Here, all the complaints that were reported exactly at 12 is removed.
+The crime keeps rising from the morning and is at its peak during the evening hours.
+
+## NYPD CRIMES BY YEAR
+
+```{r NYPD crimes by year, echo=FALSE, warning=FALSE}
+# getting a subset of year and crime type and borough
+alt_data_1<-alt_data[alt_data$YEAR<15]
+date_request<-
+  subset(alt_data_1,select=c(YEAR,LAW_CAT_CD,BORO_NM)) %>%
+  group_by(YEAR) %>%
+  dplyr::summarize(Complaints=n())
+
+date_request$YEAR <- factor(date_request$YEAR, levels = date_request$YEAR)
+# plotting crimes year wise
+ggplot(date_request, aes(x=YEAR, y= Complaints) ) + 
+    xlab("Year") + ylab('Criminal Complaints') +
+    geom_line(aes(group=1),color='blue') +
+    geom_point(color='red')+
+    labs(title="Total NYPD Criminal Complaints By Year")+
+    theme(plot.title = element_text(hjust = 0.4))+
+    scale_y_continuous(labels = comma)
+
+
+```
+
+Over the years from 2010 to 2014 the crime count seems to be decreasing which is a good thing which means the NYPD is doing a good job.
+
+## TOP 10 CRIMES IN NYC
+
+```{r top 10 complaints, echo=FALSE, warning=FALSE}
+# plotting all top 10 crimes in NYC
+ggplot(subset(alt_data, OFNS_DESC %in% dplyr::count(alt_data, OFNS_DESC, sort = T)[1:10]$OFNS_DESC), aes(fct_infreq(OFNS_DESC)))+geom_histogram(stat ="count", fill='pink')+labs(x="Type of crime", y="No. of crimess")+
+  coord_flip()+
+  labs(title="Top 10 Crimes")+
+  scale_y_continuous(labels = comma)
+
+```
+
+The number one crime in NYPD is petite larceny with felony assault being the lowest
+
+## CRIMINAL COMPLAINT TYPES ACROSS BOROUGH
+
+```{r felonies in each borough, echo=FALSE, warning=FALSE}
+# picking NYPD cases
+dataset <- alt_data %>% filter(BORO_NM %in% c("BRONX", "BROOKLYN", "MANHATTAN", "QUEENS","STATEN ISLAND")) %>%
+  group_by(BORO_NM,LAW_CAT_CD) %>%
+  dplyr::summarise(n=n())
+ggplot(dataset, aes(x=LAW_CAT_CD,y=n,fill=factor(BORO_NM)))+
+  geom_bar(stat ="identity", fill="Red")+
+  coord_polar(theta = 'x') +
+  facet_wrap(~BORO_NM, scales = "free",dir="v") + 
+  coord_flip()+
+  ggtitle('Criminal Complaints in each Borough') +
+  xlab('Type Of Criminal Complaint') +
+  ylab('Count')+
+  scale_y_continuous(labels = comma)
+
+
+```
+
+Brooklyn has the most number of criminal complaints reported, whereas Staten Island's criminal complaint counts are really small when compared to Brooklyn.
+Also, the Misdemeanor criminal complaint type is the highest among all the Boroughs.
+
+## MERGING BOTH DATASETS
+
+Join on Borough, Year, Month, Day
+
+```{r JOIN DATA, echo=FALSE, warning=FALSE}
+#SNAPSHOT OF AGENCY WIDE COMPLAINTS FROM THE NYC311 DATASET
+nyc311sum <- df %>%
+  select(Agency, Borough, Created_day, Created_month, Created_year, ComplaintType) %>% 
+  filter(Agency=="NYPD", Created_year>=10)
+nyc311sum <- nyc311sum %>% 
+  group_by(Borough, Created_year, Created_month, Created_day) %>% 
+  dplyr::summarize(Total_Complaints=n())
+
+altdatasum <- alt_data %>% 
+  select(BORO_NM, YEAR, MONTH, DAY, LAW_CAT_CD) %>%
+  filter(BORO_NM!="")
+#Fixing the name of columns for simplicity
+names(altdatasum)[names(altdatasum)=="BORO_NM"] <- "Borough"
+names(altdatasum)[names(altdatasum)=="YEAR"] <- "Year"
+names(altdatasum)[names(altdatasum)=="MONTH"] <- "Month"
+names(altdatasum)[names(altdatasum)=="DAY"] <- "Day"
+names(nyc311sum)[names(nyc311sum)=="Created_day"] <- "Day"
+names(nyc311sum)[names(nyc311sum)=="Created_year"] <- "Year"
+names(nyc311sum)[names(nyc311sum)=="Created_month"] <- "Month"
+nyc311sum$Year <- (as.integer(nyc311sum$Year))
+nyc311sum$Month <- (as.integer(nyc311sum$Month))
+nyc311sum$Day <- (as.integer(nyc311sum$Day))
+altdatasum <- altdatasum %>% 
+  group_by(Borough, Year, Month, Day) %>% 
+  dplyr::summarize(Total_Offenses=n())
+altdatasum$Month[altdatasum$Month==1] <- "Jan"
+altdatasum$Month[altdatasum$Month==2] <- "Feb"
+altdatasum$Month[altdatasum$Month==3] <- "Mar"
+altdatasum$Month[altdatasum$Month==4] <- "Apr"
+altdatasum$Month[altdatasum$Month==5] <- "May"
+altdatasum$Month[altdatasum$Month==6] <- "Jun"
+altdatasum$Month[altdatasum$Month==7] <- "Jul"
+altdatasum$Month[altdatasum$Month==8] <- "Aug"
+altdatasum$Month[altdatasum$Month==9] <- "Sep"
+altdatasum$Month[altdatasum$Month==10] <- "Oct"
+altdatasum$Month[altdatasum$Month==11] <- "Nov"
+altdatasum$Month[altdatasum$Month==12] <- "Dec"
+nyc311sum$Month[nyc311sum$Month==1] <- "Jan"
+nyc311sum$Month[nyc311sum$Month==2] <- "Feb"
+nyc311sum$Month[nyc311sum$Month==3] <- "Mar"
+nyc311sum$Month[nyc311sum$Month==4] <- "Apr"
+nyc311sum$Month[nyc311sum$Month==5] <- "May"
+nyc311sum$Month[nyc311sum$Month==6] <- "Jun"
+nyc311sum$Month[nyc311sum$Month==7] <- "Jul"
+nyc311sum$Month[nyc311sum$Month==8] <- "Aug"
+nyc311sum$Month[nyc311sum$Month==9] <- "Sep"
+nyc311sum$Month[nyc311sum$Month==10] <- "Oct"
+nyc311sum$Month[nyc311sum$Month==11] <- "Nov"
+nyc311sum$Month[nyc311sum$Month==12] <- "Dec"
+# By Borough total
+joined_data <- inner_join(nyc311sum, altdatasum, by=c("Borough", "Year", "Month","Day"))
+joined_data<-filter(joined_data,Borough!="Unspecified")
+
+
+joined_data_borough <-  joined_data %>% 
+  group_by(Borough) %>% 
+  dplyr::summarize(Total_Complaints=sum(Total_Complaints), Total_Offenses=sum(Total_Offenses))
+
+# By year
+joined_data_year <- joined_data %>% 
+  group_by(Borough, Year) %>% 
+  dplyr::summarize(Total_Complaints=sum(Total_Complaints), Total_Offenses=sum(Total_Offenses))
+
+# By year,month total
+joined_data_month_total <- joined_data %>% 
+  group_by(Month,Borough) %>% 
+  dplyr::summarize(Total_Complaints=sum(Total_Complaints), Total_Offenses=sum(Total_Offenses))
+```
+
+## JOINED DATA SET
+
+```{r join head, echo=FALSE, warning=FALSE}
+
+landscape(knitr::kable(head(joined_data),"latex"))%>% 
+  kable_styling(latex_options="HOLD_position")
+
+```
+
+Borough name, year, month and, day are the attributes that as a team we collectively decided to join the datasets upon.
+With the help of this join, it would enable us to make a variety of informative visualizations.
+
+First, a snapshot of the agency wise complaints from the 311 dataset with the attributes Agency, Borough, Created_day, Created_month, Created_year, ComplaintType and filtered it by just taking NYPD complaints with years greater than or equal to 2010.
+Then the data was grouped based on the total complaints for each row.
+A subset of the NYPD complaint dataset was also taken with the attributes BORO_NM, YEAR, MONTH, DAY, LAW_CAT_CD. The column names of this dataset was changed to the name of corresponding column name of th 311 dataset.
+All the months in both the datasets were converted from numbers to the respective months.
+The two datasets were joined using left join by the Borough, Year and, Month.
+The total number of offense were calculated by the same Borough, Year and, Month and the joined dataset is grouped by the total number of offenses.
+So now joined_data contains both the dataset.
+
+## NO. OF COMPLAINTS VS CRIMES BOROUGH WISE
+
+```{r com vs crime - borough, echo=FALSE, warning=FALSE}
+
+df2 <- tidyr::pivot_longer(joined_data_year, cols=c('Total_Complaints', 'Total_Offenses'), names_to='variable', 
+values_to="value")
+df2$Year<-as.character(df2$Year)
+#ggplot(joined_data_year,aes(y=Total_Offenses,x=as.character(Year))) +
+#  geom_col(aes(fill=Total_Complaints),position="dodge")
+ggplot(df2, aes(x=Year, y=value, fill=variable)) +
+    geom_bar(stat='identity', position='dodge') +
+    facet_wrap(~Borough)+
+    ggtitle('No. Of Complaints And Criminal Complaints by Borough')
+```
+
+From the above scatter plot, it can be seen that the number of offenses and 311 requests are always low in Staten Island.
+In Brooklyn and Manhattan both keep rising with the number of offense count being higher than 311 request counts at most times.
+Also, one interesting observation is that the rate of Offenses in Queens stay the same even though the Complaints vary each year.
+
+## NO. OF COMPLAINTS VS CRIMES MONTH WISE
+
+```{r MONTH, echo=FALSE, warning=FALSE}
+ggplot(joined_data, aes(Total_Complaints, Total_Offenses,color =Month)) +
+  geom_smooth(formula = y ~ x, method="lm") +
+  theme_minimal(base_size = 5) + ggtitle('311 Requests vs Crimes in NYC Month wise') + xlab('Total 311 Requests') + ylab('Total crimes')
+```
+
+The smooth plot helps in understanding the relationship between the 311 requests and crimes in NYPD which happens to increase over the months but the number of offense is always more than the total number of 311 requests.
+
+## CORRELATION BETWEEN 311 COMPLAINTS & CRIMINAL COMPLAINTS PER YEAR
+
+```{r YEAR, echo=FALSE, warning=FALSE}
+ggplot(joined_data_year, aes(Total_Offenses, Total_Complaints , colour = Borough)) + 
+  geom_point(size = 2)+
+  theme(axis.text.x = element_text(angle = 90, vjust = .5))+
+  labs(title="Correlation of Joined Complaints and Crimes per Year", y="Complaints", x="Crimes")
+```
+
+# CONCLUSION
+
+Through this assignment we were able to analyze the NYC 311 service request dataset and explore more about and find new information.
+We asked a set of questions and through the visualizations made, we were able to answer those questions.
+
+Initially, we cleaned the data and pre-processed it and made it ready for analysis.
+Using the latitude and longitude columns from the dataset we marked the areas of the top 5 complaints across NYC.
+It must be noted that, for this particular analysis we used a sample of the dataset which has 400,000 rows.
+Amongst the top complaints, ***Heat/Hot water*** complaint is prevalent throughout NYC.
+Following Heat/Hot Water complaint is ***Water System*** compliant which is equally distributed throughout the city, although less dense than the former complaint.
+An interesting observation we made is that in the northern region of NYC (Upper Manhattan), although being known as one of the busiest locations in the world, there are hardly any complaints of ***Blocked Driveways.***
+
+We looked into the efficiency of top 5 agencies based on the closed cases.
+***The Department of Housing Preservation and Development*** has closed the most cases.
+We also analyzed the pending cases of all the agencies and saw that the Agencies ***DOT, DSNY,*** and ***DOHMH*** have at least 50000 complaints, topping the list is the ***Department of Transportation (DOT)*** with registered pending complaints close to 150,000.
+While the remaining agencies have almost no pending cases but it could also mean the case could be pending but the Status could be ***Assigned*** or ***Email sent***, etc.
+
+Amongst all the five boroughs, most complaints were registered to ***NYPD*** were from ***Brooklyn*** and ***Queens***.
+The lowest number of complaints originate from ***Staten Island.*** While studying the dataset, we understood that under the umbrella of noise complaints there are several varieties of noise complaints.
+To analyze in depth, we made a visualization which explains all the different noise complaints registered from different boroughs.
+According to the previous visualization, although Queens and Brooklyn have the most complaints registered to NYPD, Manhattan is where top 3 noise complaint types (Noise, Noise-Commercial, andNoise- Street/Sidewalk) are registered.
+
+In NYC, the weather can get very cold during the first quarter of the year, this is the period where the most number of complaints are registered with January being the highest.
+This could be because of the high volume of complaints due to ***Heat/Hot Water.***
+
+We made an important visualization which talks about how efficiently all the agencies resolve their respective service requests.
+We calculated the average resolution time taken (in hours) for each agency.
+***The Department of Consumer Affairs*** take the most time to resolve their cases and is not very efficient.
+
+We were also able to localize the time slot between which most of the complaints are reported in a day.
+The time around noon between 9-12 a.m is where most of the complaints are reported which makes sense as these are normal working hours of any agency office.
+One more peculiar observation is that even after normal office hours there is a steady incoming of complaints for more than 2 hours after which it declines rapidly.
+
+We were also able to categorize the popular descriptor words used while complaining across the Boroughs.
+We see a divison of Complaint words across the 2 groups of Boroughs viz Manhattan,Bronx,Brooklyn and Staten Island and Queens, which gives us a better idea of where to replicate which resolution strategy.
+
+We explored the NYPD_Complaints_Data_Historic dataset.
+From this dataset we could get an understanding of the crimes happening in NYC and how NYPD is able to handle them.
+Over the years from 2010 to 2015, the number of crimes keep decreasing showing us that NYPD works very hard when it comes to handling both emergent and non emergent complaints.
+From the visualizations made, it is evident that Brooklyn has the more number of crimes happening which makes sense because there are a variety of people living there and is a very contrasting to Staten Island where the crime rate is low which could be because it is primarily a peaceful suburban area.
+
+When looking at crimes by each hour, it can be seen that the crime rate keeps increase from morning to evening with the evening time being the prime crime time and it slowly decreases as night progresses.
+
+Using dplyr package, we were able to perform a join between the nyc311 complaint and the nypd crime dataset.
+We were able to combine the data by projecting only the data between the year 2010 and 2015.
+Based on this , we could find that there were many columns like Boroughs, Year, Month, Time, etc. that we can use in joining the two datasets.
+We cleaned the new data in the same manner as we did for the nyc311 datasets in earlier assignments.
+We also created custom columns like the Year,month, day from the complaint time column of this dataset.
+As directed we created several short tables to signify the quality of the join on the datasets.
+So for a given Borough and time , we can point out how many complaints on the 311 helpline have been registered over the years and months,etc.
+and also report the crime statistics across the same demography.
+
+Looking at the joined data, the relationship between the number of 311 requests and number of offenses were observed.
+The number of crimes are always higher than the number of 311 requests which is the scary part to live in NYC.
+Looking the relationship Borough wise, Brooklyn stands the highest at both emergent and non-emergent complaints which tells us that Brooklyn could be a place that one should be careful while visiting NYC.
+
+Overall, we were able to understand better about how all the departments in NYC work in handling their complaints and it can be said that most departments are very efficient in handling cases especially NYPD.
+The NYPD handles both emergent and non-emergent cases in an efficient manner and tries to resolve them as quickly as possible.
+
+# APPENDICES
+
+## DATA DICTIONARY - 311 DATASET
+
+There are 13 columns we find relevant.
+Here the data is described.
+
+Relevant columns
+
+### AgencyName
+
+The full names of the agencies and also the department which handles the service request in that agency is provided.
+Example : New York Police Department, Department of Transportation.
+
+### Agency
+
+The acronyms of the different agencies which handles the service request are listed.
+
+### Complaint Type
+
+This column identifies the topic of the incident or service request.
+Complaint Type could also have Descriptor which provides further details.
+Example : Hot Water problem, Street Condition, Noise complaint etc.
+
+### Descriptor
+
+This column is dependent on Complaint Type.
+It provides further details about the complaint.
+Example : For a noise complaint, it says the cause of the nice like music, traffic etc.
+
+### Incident Zip
+
+The column consists of the incident location's zip code.
+Example: 11205, 11378 etc.
+
+### Street Name
+
+Consists of the street name of the given incident address.
+Example : University Avenue, 70th Street etc.
+
+### AddressType
+
+Provides detail on the type of the Incident location Example : Address, Intersection etc.
+
+### Status
+
+Provides the status of the service request.
+Example: Assigned, Closed etc.
+
+### Borough
+
+Specifies the borough of the incident location.
+This also consists of many unspecified values.
+Example Bronx, Brooklyn, Queens etc
+
+### X Coordinate
+
+Gives the X coordinate of the incident location.
+Example : 1033758
+
+### Y Coordinate
+
+Gives the Y coordinate of the incident location.
+Example : 2401
+
+### Park Borough
+
+Specifies the borough of the incident if it is in a Parks Department facility.
+
+### School Zip
+
+Specifies the zip code of the incident if it is in a School zone.
+
+### Latitude
+
+Specifies the latitude of the incident location.
+Example : 40.8273
+
+### Longitude
+
+Specifies the longitude of the incident location.
+Example : -73.82111
+
+### CreatedDate
+
+The Created Date specifies the date and time the incident was reported.
+
+Example: 12/24/2015 2:55:20 AM
+
+### ClosedDate
+
+The Closed Date specifies the date and time the incident report was closed.
+
+Example: 12/24/2015 5:10:10 AM
+
+### NEW COLUMNS
+
+Here, the Created date and Closed date is split into Month, day and it's hour.
+
+New columns -\> Created_month, Created_day, Created_hour, Closed_month, Closed_day and Closed_hours are added to the dataset
+
+## DATA DICTIONARY - NYPD CRIMES DATASET
+
+### **DATE_TIME(Type: Date)**
+
+-Exact date time of Complaint
+
+### **ADDR_PCT_CD** 
+
+-The precinct in which the incident occurred
+
+### **OFNS_DESC(Type: CHAR)**
+
+-Description of offense corresponding with key code
+
+### **LAW_CAT_CD(TYPE: CHAR)**
+
+\- Level of offense: felony, misdemeanor, violation
+
+### **BORO_NM(TYPE:CHAR)**
+
+\- The name of the borough in which the incident occurred
+
+### **JURIS_DESC(TYPE:CHAR)**
+
+\- Description of the jurisdiction code
+
+### **Latitude(TYPE: FLOAT)**
+
+\- Midblock Latitude coordinate for Global Coordinate System, WGS 1984, decimal degrees
+
+### **Longitude(TYPE: FLOAT)**
+
+\- Midblock Longitude coordinate for Global Coordinate System, WGS 1984, decimal degrees
+
+### **SUSP_AGE_GROUP(TYPE: CHAR)**
+
+\- Suspect's Age Group
+
+### **VIC_AGE_GROUP(TYPE: CHAR)**
+
+\- Victim's Age Group
+
+### **Custom Columns**
+
+### **Day(Type: Number)**
+
+-Integer representing the Day, derived from Date_Time
+
+### **Month(Type: Number)**
+
+-Integer representing the month, derived from Date_Time
+
+### **Year(Type: Number)**
+
+-Integer representing the starting Year, derived from Date_Time
